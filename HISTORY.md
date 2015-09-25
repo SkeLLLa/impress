@@ -1,7 +1,51 @@
+0.1.367 / 2015-09-23
+==================
+
+  * Client-side code refactoring
+
+0.1.366 / 2015-09-19
+==================
+
+  * Example application code fixes
+  * Changed deploy scripts to use node.js 4.1.0
+
+0.1.365 / 2015-09-17
+==================
+
+  * Client-side code style fixes
+
+0.1.364 / 2015-09-16
+==================
+
+  * Removed jQuery dependency in client-side code, close #237
+
+0.1.363 / 2015-09-15
+==================
+
+  * Client-side code refactoring
+
+0.1.362 / 2015-09-14
+==================
+
+  * Fixed application.loadPlaceFile, now setup scripts executing just once and just in master process, close #426
+  * Multiple client-side code optimizations
+  * Removed jQuery dependency in all client-side code except pop-up window
+
+0.1.361 / 2015-09-13
+==================
+
+  * WCL deprecated in client-side code
+  * Removed jQuery ajax get and post dependency
+
+0.1.360 / 2015-09-12
+==================
+
+  * Fixes in client-side code
+
 0.1.359 / 2015-09-11
 ==================
 
-  * Changed deploy scripts to use node.js 4.0
+  * Changed deploy scripts to use node.js 4.0.0
 
 0.1.358 / 2015-09-10
 ==================

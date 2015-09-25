@@ -1,4 +1,4 @@
-﻿'use strict';
+﻿﻿'use strict';
 
 window.global = window;
 global.api = {};
@@ -44,7 +44,18 @@ platform.WebKit = platform.Chrome || platform.Safari;
 
 if (platform.IE) platform.IEVersion = parseFloat(navigator.appVersion.split('MSIE')[1]);
 
+// Patch page links to prevent page reload
+//
 api.dom.fixLinks = function(persist) {
+
+  function makeLink(link) {
+    link.addEventListener('click', function(/*event*/) {
+      //event.preventDefault();
+      if (persist && this.host === window.location.host) localStorage.setItem('location', this.pathname + this.search);
+      window.location = this.href;
+    }, false);
+  }
+
   if (platform.iOS) {
     if (persist === null) persist = true;
     persist = persist && localStorage;
@@ -53,18 +64,14 @@ api.dom.fixLinks = function(persist) {
           storedLocation = localStorage.getItem('location');
       if (storedLocation && storedLocation !== currentLocation) window.location = storedLocation;
     }
-    var link, links = document.getElementsByTagName('a');
-    for (var i = 0; i < links.length; i++) {
-      link = links[i];
-      link.addEventListener('click', function(e) {
-        //e.preventDefault();
-        if (persist && this.host === window.location.host) localStorage.setItem('location', this.pathname + this.search);
-        window.location = this.href;
-      }, false);
-    }
+    var links = document.getElementsByTagName('a');
+    for (var i = 0; i < links.length; i++) makeLink(links[i]);
   }
+
 };
 
+// Save cookies in localstorage
+//
 api.dom.fixCookie = function(sessionCookieName) {
   if (localStorage && platform.iOS) {
     var cookieSession = document.cookie.match(new RegExp(sessionCookieName + '=[^;]+')),
@@ -79,8 +86,8 @@ api.dom.fixCookie = function(sessionCookieName) {
   }
 };
 
-// DOM utils
-
+// Get element by tag id
+//
 api.dom.id = function(id) {
   return document.getElementById(id);
 };
@@ -107,6 +114,8 @@ if (document.getElementsByClassName) {
   };
 }
 
+// Add element class
+//
 api.dom.addClass = function(element, className) {
   var regex = new RegExp('(^|\\s)' + className + '(\\s|$)', 'g');
   if (regex.test(element.className)) {
@@ -115,31 +124,36 @@ api.dom.addClass = function(element, className) {
   }
 };
 
+// Remove element class
+//
 api.dom.removeClass = function(element, className) {
   var regex = new RegExp('(^|\\s)' + className + '(\\s|$)', 'g');
   element.className = element.className.replace(regex, '$1').replace(/\s+/g, ' ').replace(/(^ | $)/g, '');
 };
 
+// Check element class
+//
 api.dom.hasClass = function(element, className) {
   element = api.dom.element(element);
   return element.className.match(new RegExp('(^|\b)' + className + '($|\b)'));
 };
 
+// Toggle element class
+//
 api.dom.toggleClass = function(element, className) {
   element = api.dom.element(element);
   if (api.dom.hasClass(element, className)) api.dom.removeClass(element, className);
   else api.dom.addClass(element, className);
 };
 
+// Insert element after
+//
 api.dom.insertAfter = function(parent, node, referenceNode) {
   parent.insertBefore(node, referenceNode.nextSibling);
 };
 
-api.dom.getFrameDocument = function(fname) {
-  if (platform.IE) return frames[fname].document;
-  else return api.dom.id(fname).contentDocument; 
-};
-
+// Add element event
+//
 api.dom.addEvent = function(element, event, fn) {
   if (element.addEventListener) {
     return element.addEventListener(event, fn, false);
@@ -151,10 +165,12 @@ api.dom.addEvent = function(element, event, fn) {
   } else return false;
 };
 
+// Remove element event
+//
 api.dom.removeEvent = function(element, event, fn) {
   if (element.removeEventListener) {
     return element.removeEventListener(event, fn, false);
-  } else if (element.detachEvent) { 
+  } else if (element.detachEvent) {
     return element.detachEvent('on' + event, fn);
   } else return false;
 };
@@ -170,16 +186,30 @@ api.dom.on = function(event, element, fn) {
   if (element) api.dom.addEvent(element, event, fn);
 };
 
+// Use element or selector
+//
 api.dom.element = function(element) {
-  if (typeof(element) === 'string') return document.querySelector(element);
-  else return element;
+  if (typeof(element) !== 'string') {
+    return element;
+  }
+  var result;
+  try {
+    //catching DOMException if element is not a valid selector
+    result = document.querySelector(element);
+  } catch (e) {
+    result = null;
+  }
+  return result;
 };
 
+// Get page body reference
+//
 api.dom.on('load', function() {
   api.dom.body = document.body || document.getElementsByTagName('body')[0];
 });
 
 // fn(event) should terurn not empty string for confirmation dialog
+//
 api.dom.onBeforeUnload = function(fn) {
   api.dom.addEvent(api.dom, 'beforeunload', function(event) {
     var message = fn(event);
@@ -189,126 +219,241 @@ api.dom.onBeforeUnload = function(fn) {
   });
 };
 
-// --------------------------------------------------------------
+// Fire event
+//
+api.dom.fireEvent = function(element, eventName) {
+  if (element.fireEvent) element.fireEvent('on' + eventName);
+  else {
+    var event = document.createEvent('Events');
+    event.initEvent(eventName, true, false);
+    element.dispatchEvent(event);
+  }
+};
 
+// Enable element
+//
 api.dom.enable = function(element, flag) {
   if (flag) api.dom.removeClass(element, 'disabled');
   else api.dom.addClass(element, 'disabled');
 };
 
+// Visible element
+//
 api.dom.visible = function(element, flag) {
-  if (flag) api.dom.show();
-  else api.dom.hide();
+  if (flag) api.dom.show(element);
+  else api.dom.hide(element);
 };
 
-api.dom.reload = function(url, callback) {
-  var panel = this;
-  panel/*scroller('remove').*/.empty().html('<div class="progress"></div>').load(url, function() {
-    //panel.removeAttr('style').scroller('y');
-    //panel.scroller('y');
-    if (api.dom.platform.iOS) panel.width(panel.width()-1);
-    $('a.default', panel).click();
-    if (callback) callback.call(panel);
-    //$('textarea').autoResize({ animateDuration: 300, extraSpace: 20 }).trigger('change');
-    //refreshControls();
+// Toggle element
+//
+api.dom.toggle = function(element) {
+  if (api.dom.hasClass(element, 'hidden')) api.dom.show(element);
+  else api.dom.hide(element);
+};
+
+// Hide element
+//
+api.dom.hide = function(element) {
+  if (!api.dom.hasClass(element, 'hidden')) {
+    api.dom.addClass(element, 'hidden');
+    element.setAttribute('_display', element.style.display);
+    element.style.display = 'none';
+  }
+};
+
+// Show element
+//
+api.dom.show = function(element) {
+  if (api.dom.hasClass(element, 'hidden')) {
+    api.dom.removeClass(element, 'hidden');
+    element.style.display = element.getAttribute('_display') || '';
+  }
+};
+
+// Load element content using AJAX
+//
+api.dom.load = function(url, element, callback) {
+  element.innerHTML = '<div class="progress"></div>';
+  api.rpc.get(url, {}, function(err, res) {
+    element.innerHTML = res;
+    if (callback) callback(err, res, element);
   });
 };
 
-// $.ajaxSetup({cache: false});
-
+// Center element
+//
 api.dom.alignCenter = function(element) {
-  element = api.dom.element(element);
-  var marginLeft = Math.max(40, parseInt($(window).width()/2 - $(element).width()/2, 10)) + 'px';
-  var marginTop = Math.max(40, parseInt($(window).height()/2 - $(element).height()/2, 10)) + 'px';
-  return $(element).css({ 'margin-left': marginLeft, 'margin-top': marginTop });
+  // TODO: implement api.dom.alignCenter
 };
 
-api.dom.togglePopup = function(element) {
-  element = api.dom.element(element);
-  if ($('#popup').hasClass('hidden')) {
-    if (api.dom.platform.IE) {
-      $('#darken').height($(document).height()).toggleClass('hidden');
-    } else {
-      $('#darken').height($(document).height()).toggleClass('hidden').fadeTo('slow', 0.5).click(function(event) {
-        event.stopPropagation();
-        var form = document.querySelector('#popup .form');
-        if (form) api.dom.togglePopup(form);
-      });
-    }
-    $(element).appendTo('#popup');
-    api.dom.alignCenter('#popup');
-    api.dom.toggleClass('#popup', 'hidden');
-    $('form :input:visible:enabled:first', element).focus();
-  } else {
-    api.dom.toggleClass('#darken', 'hidden');
-    $('#darken').removeAttr('style');
-    api.dom.toggleClass('#popup', 'hidden');
-    $('#popup').removeAttr('style');
-    $('#popup .form').appendTo('#forms');
-  }
-};
+// Popup
+//
+api.dom.popup = function(innerContent) {
+  // TODO: decompose api.dom.popup
 
-api.dom.closeForm = function() {
-  api.dom.form = document.querySelector('#popup .form');
-  var $inputs = $('form select:input', api.dom.form);
-  $inputs.each(function() {
-    //alert($(this).val());
-    $(this).combobox('destroy');
+  var popup = document.createElement('div'),
+      wrapper = document.createElement('div'),
+      content = document.createElement('div');
+
+  popup.appendChild(content);
+  wrapper.appendChild(popup);
+  api.dom.body.appendChild(wrapper);
+
+  api.dom.setStyles(wrapper, {
+    'height': window.innerHeight + 'px',
+    'width': window.innerWidth + 'px',
+    'line-height': window.innerHeight + 'px', //vertical centering
+    'position': 'absolute',
+    'z-index': '10',
+    'text-align': 'center', //horizontal centering
+    'overflow': 'hidden',
+    'transition': '0.5s',
+    'background': 'rgba(0, 0, 0, 0.5)',
+    'opacity': '0',
   });
-  if (api.dom.form) api.dom.togglePopup(api.dom.form);
-};
+  setTimeout(function() {
+    api.dom.setStyles(wrapper, {
+      'opacity': '1',
+    });
+  }, 50);
+  var POPUP_MARGIN = 10;
+  var POPUP_PADDING = {
+    VER: 20,
+    HOR: 15,
+  };
+  api.dom.setStyles(popup, {
+    display: 'inline-block',
+    background: 'white',
+    'box-shadow': '2px 2px 10px black',
+    'min-width': '300px',
+    'max-width': (wrapper.offsetWidth - POPUP_MARGIN * 2 ) + 'px',
+    'max-height': (wrapper.offsetHeight - POPUP_MARGIN * 2 ) + 'px',
+    'min-height': '100px',
+    'overflow': 'auto',
+    'margin': POPUP_MARGIN + 'px',
+    'padding': POPUP_PADDING.VER + 'px ' + POPUP_PADDING.HOR + 'px',
+    'box-sizing': 'border-box', //include padding to height/width
+    'text-align': 'initial',
+    'line-height': 'initial',
+    'vertical-align': 'middle', //vertical centering
+  });
+  api.dom.setStyles(content, {
+    'display': 'inline-block',
+  });
+  var bodyPrevOverflow = api.dom.body.style.overflow;
+  api.dom.setStyles(api.dom.body, {
+    'overflow': 'hidden'
+  });
 
-//$(document).keydown(function(event) {
-//  if (event.keyCode === 27) closeForm();
-//  else if (event.keyCode === 13) $('#popup .form .save').trigger('click');
-//});
-
-//$(document).on('click', '#popup .cancel', function(event) {
-//  closeForm();
-//  return false;
-//});
-
-// --- Confirmation ---
-
-// Buttons: ['Yes', 'No', 'Ok', 'Cancel']
-api.dom.confirmation = function(title, message, eventYes, buttons) {
-  var form = $('#formConfirmation');
-  if (typeof(buttons) === 'undefined') buttons = ['Cancel', 'Yes'];
-  $('.header', form).html(title);
-  $('.message', form).html('<br/>' + message + '<br/><br/>');
-  api.dom.confirmation.formConfirmationYes = eventYes;
-  $('#formConfirmationYes').visible(buttons.indexOf('Yes') > -1);
-  $('#formConfirmationOk').visible(buttons.indexOf('Ok') > -1);
-  $('#formConfirmationNo').visible(buttons.indexOf('No') > -1);
-  $('#formConfirmationCancel').visible(buttons.indexOf('Cancel') > -1);
-  form.togglePopup();
-};
-
-$(document).on('click', '#formConfirmation .button.save', function(event) {
-  if (typeof(api.dom.confirmation.formConfirmationYes) === 'function') {
-    api.dom.confirmation.formConfirmationYes();
+  /**@type {HTMLElement}*/
+  var element;
+    element = api.dom.element(innerContent);
+  if (element) {
+    var previouseParent = element.parentNode;
+    var previouseSibling = element.nextElementSibling;
+    content.appendChild(element);
+  } else if (typeof(innerContent) === 'string') {
+    content.innerHTML = innerContent;
   }
-  api.dom.confirmation.formConfirmationYes = null;
-  closeForm();
-  return false;
-});
 
-// --- Input ---
+  api.dom.on('resize', function() {
+    api.dom.setStyles(wrapper, {
+      'height': window.innerHeight + 'px',
+      'width': window.innerWidth + 'px',
+      'line-height': window.innerHeight + 'px',
+    });
+    api.dom.setStyles(popup, {
+      'max-width': (wrapper.offsetWidth - POPUP_MARGIN * 2 ) + 'px',
+      'max-height': (wrapper.offsetHeight - POPUP_MARGIN * 2 ) + 'px',
+    });
+  });
 
-api.dom.input = function(title, prompt, defaultValue, eventOk) {
-  var form = $('#formInput');
-  $('.header', form).html(title);
-  //$('.message', form).html(message);
-  $('.field .label', form).html(prompt);
-  //if (defaultValue)
-  $('#formInputValue').val(defaultValue);
-  api.dom.input.formInputOk = eventOk;
-  form.togglePopup();
+  api.dom.on('click', wrapper, function handler(event) {
+    if (event.target !== wrapper) return true;
+    api.dom.setStyles(wrapper, {
+      'opacity': '0'
+    });
+    setTimeout(function() {
+      if (previouseParent)previouseParent.insertBefore(content.childNodes.item(0), previouseSibling);
+      api.dom.body.removeChild(wrapper);
+      api.dom.body.style.overflow = bodyPrevOverflow;
+    }, 500); //wait 0.5s for animation end
+    api.dom.removeEvent(wrapper, 'click', handler);
+    event.stopImmediatePropagation();
+    return false;
+  });
 };
 
-// Copypaste utils
+// Set given styles to element
+//
+api.dom.setStyles = function(element, styles) {
+  // TODO: decompose api.dom.setStyles
+
+  var props = { //taken from Emmet lib - https://github.com/emmetio/emmet/blob/master/lib/resolver/css.js#L155
+    'webkit': 'animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-clip, background-composite, background-origin, background-size, border-fit, border-horizontal-spacing, border-image, border-vertical-spacing, box-align, box-direction, box-flex, box-flex-group, box-lines, box-ordinal-group, box-orient, box-pack, box-reflect, box-shadow, color-correction, column-break-after, column-break-before, column-break-inside, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-span, column-width, dashboard-region, font-smoothing, highlight, hyphenate-character, hyphenate-limit-after, hyphenate-limit-before, hyphens, line-box-contain, line-break, line-clamp, locale, margin-before-collapse, margin-after-collapse, marquee-direction, marquee-increment, marquee-repetition, marquee-style, mask-attachment, mask-box-image, mask-box-image-outset, mask-box-image-repeat, mask-box-image-slice, mask-box-image-source, mask-box-image-width, mask-clip, mask-composite, mask-image, mask-origin, mask-position, mask-repeat, mask-size, nbsp-mode, perspective, perspective-origin, rtl-ordering, text-combine, text-decorations-in-effect, text-emphasis-color, text-emphasis-position, text-emphasis-style, text-fill-color, text-orientation, text-security, text-stroke-color, text-stroke-width, transform, transition, transform-origin, transform-style, transition-delay, transition-duration, transition-property, transition-timing-function, user-drag, user-modify, user-select, writing-mode, svg-shadow, box-sizing, border-radius',
+    'moz': 'animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-inline-policy, binding, border-bottom-colors, border-image, border-left-colors, border-right-colors, border-top-colors, box-align, box-direction, box-flex, box-ordinal-group, box-orient, box-pack, box-shadow, box-sizing, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-width, float-edge, font-feature-settings, font-language-override, force-broken-image-icon, hyphens, image-region, orient, outline-radius-bottomleft, outline-radius-bottomright, outline-radius-topleft, outline-radius-topright, perspective, perspective-origin, stack-sizing, tab-size, text-blink, text-decoration-color, text-decoration-line, text-decoration-style, text-size-adjust, transform, transform-origin, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-focus, user-input, user-modify, user-select, window-shadow, background-clip, border-radius',
+    'ms': 'accelerator, backface-visibility, background-position-x, background-position-y, behavior, block-progression, box-align, box-direction, box-flex, box-line-progression, box-lines, box-ordinal-group, box-orient, box-pack, content-zoom-boundary, content-zoom-boundary-max, content-zoom-boundary-min, content-zoom-chaining, content-zoom-snap, content-zoom-snap-points, content-zoom-snap-type, content-zooming, filter, flow-from, flow-into, font-feature-settings, grid-column, grid-column-align, grid-column-span, grid-columns, grid-layer, grid-row, grid-row-align, grid-row-span, grid-rows, high-contrast-adjust, hyphenate-limit-chars, hyphenate-limit-lines, hyphenate-limit-zone, hyphens, ime-mode, interpolation-mode, layout-flow, layout-grid, layout-grid-char, layout-grid-line, layout-grid-mode, layout-grid-type, line-break, overflow-style, perspective, perspective-origin, perspective-origin-x, perspective-origin-y, scroll-boundary, scroll-boundary-bottom, scroll-boundary-left, scroll-boundary-right, scroll-boundary-top, scroll-chaining, scroll-rails, scroll-snap-points-x, scroll-snap-points-y, scroll-snap-type, scroll-snap-x, scroll-snap-y, scrollbar-arrow-color, scrollbar-base-color, scrollbar-darkshadow-color, scrollbar-face-color, scrollbar-highlight-color, scrollbar-shadow-color, scrollbar-track-color, text-align-last, text-autospace, text-justify, text-kashida-space, text-overflow, text-size-adjust, text-underline-position, touch-action, transform, transform-origin, transform-origin-x, transform-origin-y, transform-origin-z, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-select, word-break, wrap-flow, wrap-margin, wrap-through, writing-mode',
+    'o': 'dashboard-region, animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, border-image, link, link-source, object-fit, object-position, tab-size, table-baseline, transform, transform-origin, transition, transition-delay, transition-duration, transition-property, transition-timing-function, accesskey, input-format, input-required, marquee-dir, marquee-loop, marquee-speed, marquee-style'
+  };
+
+  var p;
+  for (p in props) {
+    props[p] = props[p].split(/\s*,\s*/);
+  }
+
+  //transform CSS string to Object
+  if (typeof(styles) === 'string') {
+    var stylesStr = styles;
+    styles = {};
+    stylesStr.split(/\s*;\s*/).filter(Boolean).forEach(function(val) {
+      //split by first ':'
+      var delimPos = val.search(/\s*:\s*/);
+      var delimLength = val.match(/\s*:\s*/)[0].length;
+      var key = val.substr(0, delimPos);
+      val = val.substr(delimPos + delimLength);
+      styles[key] = val; //storing to object
+    });
+  }
+
+  if (typeof(styles) === 'object') {
+    for (var i in styles) {
+      if (!i || !styles[i]) break;
+      var keys = [i];
+      //adding vendor prefixes if needed
+      for (p in props) {
+        if (props[p].indexOf(i) >= 0) {
+          keys.push('-' + p + '-' + i);
+        }
+      }
+      for (var j in keys) {
+        var key = dashedToUpperCase(keys[j]);
+        element.style[key] = styles[i];
+      }
+    }
+  }
+  return true;
+
+  function dashedToUpperCase(key) {
+    return key.replace(/-(\w)/g, function(match, p1) {
+      return p1.toUpperCase();
+    });
+  }
+};
+
+// Confirmation dialog
+//   Buttons: ['Yes', 'No', 'Ok', 'Cancel']
+//
+api.dom.confirmation = function(title, message, eventYes, buttons) {
+  // TODO: implement api.dom.confirmation
+};
+
+// Input dialog
+//
+api.dom.input = function(title, prompt, defaultValue, eventOk) {
+};
 
 // Call disableSelection on page load with element to disable or without parameters to disable selection in whole page
+//
 api.dom.disableSelection = function(target) {
   target = target || api.dom.html;
   if (typeof(target.onselectstart) !== 'undefined') target.onselectstart = api.impress.falseness; // For IE
@@ -321,6 +466,8 @@ api.dom.disableSelection = function(target) {
   target.style.cursor = 'default';
 };
 
+// Disable browser context menu
+//
 api.dom.disableContextMenu = function(target) {
   target = target || api.dom.html;
   api.dom.addEvent(document, 'contextmenu', function(event) {
@@ -330,6 +477,8 @@ api.dom.disableContextMenu = function(target) {
   });
 };
 
+// Disable browser content copy function
+//
 api.dom.disableCopy = function(target) {
   target = target || api.dom.html;
   var fn = function(event) {
@@ -360,9 +509,34 @@ api.dom.disableCopy = function(target) {
   });*/
 };
 
+// Escape HTML
+//
+api.dom.htmlEscape = function(content) {
+  return content.replace(/[&<>"'\/]/g,function(char) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[char]);
+  });
+};
+
+// Simple string template
+//
+api.dom.template = function(tpl, data, escapeHtml) {
+  return tpl.replace(/@([\-\.0-9a-zA-Z]+)@/g, function(s, key) {
+    return escapeHtml ? api.dom.htmlEscape(data[key]) : data[key];
+  });
+};
+
+// Simple HTML template
+//
+api.dom.templateHtml = function(tpl, data) {
+  return api.dom.template(tpl, data, true);
+};
+
 // Cookie utils
+//
 api.cookie = {};
 
+// Get cookie value by name
+//
 api.cookie.get = function(name) {
   var matches = document.cookie.match(new RegExp(
     '(?:^|; )' + name.replace(/([\.$?*|{}\(\)\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)'
@@ -370,17 +544,21 @@ api.cookie.get = function(name) {
   return matches ? decodeURIComponent(matches[1]) : false;
 };
 
+// Set cookie value
+//
 api.cookie.set = function(name, value) {
   var cookie = name + '=' + escape(value) + '; path=/';
   document.cookie = cookie;
 };
 
+// Delete cookie value
+//
 api.cookie.delete = function(name) {
   api.cookie.set(name, null, { expires: -1 });
 };
 
 // RPC API
-
+//
 api.rpc = {};
 api.rpc.tabId = 0;
 api.rpc.tabKey = '';
@@ -394,12 +572,16 @@ api.rpc.initializationCallbacks = [];
 api.rpc.supportsLocalStorage = false;
 api.rpc.onCallbacks = {};
 
+// Add named event handler
+//
 api.rpc.on = function(name, callback) {
   var namedEvent = api.rpc.onCallbacks[name];
   if (!namedEvent) api.rpc.onCallbacks[name] = [callback];
   else namedEvent.push(callback);
 };
 
+// Emit named event
+//
 api.rpc.emit = function(name, data) {
   var namedEvent = api.rpc.onCallbacks[name];
   if (namedEvent) namedEvent.forEach(function(callback) {
@@ -413,12 +595,14 @@ api.rpc.emit = function(name, data) {
 //   api.rpc.tab2 = Date.now() e.g. 1424185704772
 //   api.rpc.newtab = tabId (signal to master)
 //   api.rpc.event = signal in format { name:s, data:d, time: Date.now() }
-
+//
 api.rpc.initializationWait = function(callback) {
   if (!api.rpc.initialized) api.rpc.initializationCallbacks.push(callback);
   else callback();
 };
 
+// Initialize RPC
+//
 api.rpc.initialize = function() {
   try {
     api.rpc.supportsLocalStorage = 'localStorage' in window && window.localStorage !== null;
@@ -427,6 +611,8 @@ api.rpc.initialize = function() {
   if (api.rpc.supportsLocalStorage) api.rpc.initializeConnection();
 };
 
+// Initialize RPC done
+//
 api.rpc.initializeDone = function() {
   api.rpc.heartbeatEvent = setInterval(api.rpc.listenHandler, api.rpc.heartbeatInterval);
   api.rpc.initialized = true;
@@ -436,12 +622,16 @@ api.rpc.initializeDone = function() {
   api.rpc.initializationCallbacks = [];
 };
 
+// Get free browser tab
+//
 api.rpc.getFreeTab = function() {
   for (var id = 1;;id++) {
     if (typeof(localStorage['impress.rpc.tab' + id]) === 'undefined') return id;
   }
 };
 
+// Initialize RPC connection
+//
 api.rpc.initializeConnection = function() {
   if (!api.rpc.initialized) {
     api.rpc.tabId = api.rpc.getFreeTab();
@@ -457,12 +647,16 @@ api.rpc.initializeConnection = function() {
   api.rpc.initializeDone();
 };
 
+// Master tab heartbeat
+//
 api.rpc.heartbeat = function() {
   localStorage[api.rpc.tabKey] = Date.now();
   if (api.rpc.masterTab) api.rpc.checkTabs();
   else api.rpc.checkMaster();
 };
 
+// Check master tab
+//
 api.rpc.checkMaster = function() {
   var masterNow = parseInt(localStorage[api.rpc.masterTabKey], 10);
   if (Date.now() - masterNow > api.rpc.heartbeatInterval * 2) {
@@ -482,6 +676,8 @@ api.rpc.checkMaster = function() {
   }
 };
 
+// Check browser babs
+//
 api.rpc.checkTabs = function() {
   var tabNow, key, keys = Object.keys(localStorage);
   for (var i = 0; i < keys.length; i++) {
@@ -495,12 +691,16 @@ api.rpc.checkTabs = function() {
   }
 };
 
+// Set master tab
+//
 api.rpc.setMaster = function(id) {
   api.rpc.masterTab = false;
   api.rpc.masterTabId = id;
   api.rpc.masterTabKey = 'impress.rpc.tab' + id;
 };
 
+// Create master tab
+//
 api.rpc.createMaster = function() {
   api.rpc.masterTab = true;
   api.rpc.masterTabId = api.rpc.tabId;
@@ -509,8 +709,10 @@ api.rpc.createMaster = function() {
   api.rpc.initializeDone();
 };
 
+// RPC cross-tab communication using localstorage
+//
 api.rpc.onStorageChange = function(e) {
-  if (e.key === 'impress.rpc.event') {  
+  if (e.key === 'impress.rpc.event') {
     var event = JSON.parse(e.newValue);
     api.rpc.emit(event.name, event.data);
   } else if (api.rpc.masterTab) {
@@ -521,10 +723,14 @@ api.rpc.onStorageChange = function(e) {
   }
 };
 
+// Emit cross-tab event
+//
 api.rpc.emitTabs = function(name, data) {
   localStorage['impress.rpc.event'] = JSON.stringify({ name: name, data: data, time: Date.now() });
 };
 
+// Make URL absolute
+//
 api.rpc.absoluteUrl = function(url) {
   if (url.charAt(0) === '/') {
     var site = window.location,
@@ -535,6 +741,8 @@ api.rpc.absoluteUrl = function(url) {
   } else return url;
 };
 
+// Create websocket instance with RPC wrapper
+//
 api.rpc.ws = function(url) {
 
   var rpc = {};
@@ -611,71 +819,76 @@ api.rpc.ws = function(url) {
 
 };
 
+// Initialize RPC modile
+//
 api.rpc.initialize();
 
-// WCL API
+// Prepare AJAX interface stub
 //
-api.wcl = {};
-api.wcl.dataSets = {};
-api.wcl.containers = {};
-api.wcl.components = {};
-api.wcl.utils = {};
+api.rpc.ajax = function(methods) { // params: { method: { get/post:url }, ... }
 
-api.wcl.AjaxAPI = function(methods) { // params: { method: { get/post:url }, ... }
-  var api = {};
-  api.request = function(apiMethod, params, callback) {
+  function createMethod(apiStub, apiMethod) {
+    if (apiMethod === 'introspect') {
+      apiStub[apiMethod] = function(params, callback) {
+        apiStub.request(apiMethod, params, function(err, data) {
+          apiStub.init(data);
+          callback(err, data);
+        });
+      };
+    } else {
+      apiStub[apiMethod] = function(params, callback) {
+        apiStub.request(apiMethod, params, callback);
+      };
+    }
+  }
+
+  var apiStub = {};
+
+  apiStub.request = function(apiMethod, params, callback) {
     var err = null, requestParams = this.methods[apiMethod];
     if (requestParams) {
       var httpMethod, url;
       if (requestParams.get ) { httpMethod = 'GET'; url = requestParams.get; }
       if (requestParams.post) { httpMethod = 'POST'; url = requestParams.post; }
       if (httpMethod) {
-        api.wcl.request(httpMethod, url, params, true, callback);
+        api.rpc.request(httpMethod, url, params, true, callback);
         return;
       } else err = new Error('DataSource error: HTTP method is not specified');
     } else err = new Error('DataSource error: AJAX method is not specified');
     callback(err, null);
   };
-  api.init = function(methods) {
-    api.methods = methods;
-    var method;
-    for (method in api.methods) {
-      (function() {
-        var apiMethod = method;
-        if (apiMethod === 'introspect') api[apiMethod] = function(params, callback) {
-          api.request(apiMethod, params, function(err, data) {
-            api.init(data);
-            callback(err, data);
-          });
-        }; else api[apiMethod] = function(params, callback) {
-          api.request(apiMethod, params, callback);
-        };
-      } ());
-    }
+
+  apiStub.init = function(methods) {
+    apiStub.methods = methods;
+    for (var apiMethod in apiStub.methods) createMethod(apiStub, apiMethod);
   };
-  api.init(methods);
-  return api;
+
+  apiStub.init(methods);
+  return apiStub;
+
 };
 
-api.wcl.DataSource = function(methods) {
-  // just abstract, see implementation below
-  // should be implemented methods:
-  //   read(query, callback)   return one record as object, callback(err, obj)
-  //   insert(obj, callback)   insert one record, callback(err) on done
-  //   update(obj, callback)   update one record, callback(err) on done
-  //   delete(query, callback) delete multiple records, callback(err) on done
-  // may be implemented methods:
-  //   introspect(params, callback) populates DataSource.methods with introspection metadata returning from server
-  //   metadata(params, callback)   populates DataSource.metadata with metadata from server
-  //   find(query, callback)        return multiple records as Array, callback(err, Array)
-};
+// Data source abstract interface
+//
+// just abstract, see implementation below
+// should be implemented methods:
+//   read(query, callback)   return one record as object, callback(err, obj)
+//   insert(obj, callback)   insert one record, callback(err) on done
+//   update(obj, callback)   update one record, callback(err) on done
+//   delete(query, callback) delete multiple records, callback(err) on done
+// may be implemented methods:
+//   introspect(params, callback) populates dataSource.methods with introspection metadata returning from server
+//   metadata(params, callback)   populates dataSource.metadata with metadata from server
+//   find(query, callback)        return multiple records as Array, callback(err, Array)
 
-api.wcl.AjaxDataSource = function(methods) {
-  var ds = api.wcl.AjaxAPI(methods);
+// AJAX data source interface
+//
+api.rpc.ajaxDataSource = function(methods) {
+  var ds = api.rpc.ajax(methods);
   ds.read = function(query, callback) {
     ds.request('read', query, function(err, data) {
-      // TODO: autocreate Record
-      //   callback(err, api.wcl.Record({ data:data }));
+      // autocreate Record
+      //   callback(err, api.rpc.record({ data: data }));
       //
       callback(err, data);
     });
@@ -683,325 +896,16 @@ api.wcl.AjaxDataSource = function(methods) {
   return ds;
 };
 
-api.wcl.MemoryDataSource = function(params) { // { data:Hash, metadata:Hash }
-  var ds = {};
-  ds.data = params.data;
-  ds.metadata = params.metadata;
-  ds.each = function(params, callback) {
-    var d, key, match;
-    for (var i = 0; i < ds.data.length; i++) {
-      d = ds.data[i];
-      match = true;
-      for (key in params) match = match && (d[key] === params[key]);
-      if (match && callback(i)) return;
-    }
-  };
-  ds.read = function(params, callback) {
-    var data = ds.data;
-    ds.each(params, function(key) { callback(null, data[key]); return true; });
-    callback(new Error('Record not found'), null);
-  };
-  ds.insert = function(params, callback) {
-    ds.data.push(params);
-    callback();
-  };
-  ds.update = function(params, callback) {
-    var data = ds.data;
-    ds.each(params, function(key) { data[key] = params; return true; });
-    callback();
-  };
-  ds.delete = function(params, callback) {
-    var data = ds.data;
-    ds.each(params, function(key) { delete data[key]; });
-    callback();
-  };
-  ds.find = function(params, callback) {
-    var data = ds.data, result = [];
-    ds.each(params, function(key) { result.push(data[key]); });
-    callback(null, result);
-  };
-  return ds;
-};
-
-api.wcl.DataObject = function(params) {
-  // params: { data: Value, metadata: Hash, record: Record }
-  //
-  var obj = {};
-  obj.data = params.data;
-  obj.fields = {};
-  obj.type = typeof(obj.data); // Object, String, Array, Number
-  obj.bindings = [];
-  obj.modified = false;
-
-  if (obj.data !== null && typeof(obj.data) === 'object') {
-    var key;
-    for (key in obj.data) obj.fields[key] = api.wcl.DataObject({ data:obj.data[key] });
-  }
-
-  obj.value = function(value, forceUpdate) {
-    if (value !== undefined) {
-      if ((field.data !== value) || forceUpdate) {
-        //console.log('Field change ' + field.data + ' to ' + value);
-        field.data = value;
-        if (!forceUpdate) {
-          field.modified = true;
-          field.dataSet.record.modified = true;
-        }
-        if (field.dataSet.updateCount === 0) {
-          for (var i = 0; i < field.bindings.length; i++) field.bindings[i].value(value);
-        }
-      }
-    } else return field.data;
-  };
-  return obj;
-};
-
-api.wcl.Record = function(params) {
-  // implemented params: { data: Hash, metadata: Hash, dataSet: DataSet }
-  // not implemented:    { table: Table, source: DataSource }
-  //
-  var record = {};
-  record.fields = {};
-  record.dataSet = params.dataSet;
-  record.modified = false;
-  record.assign = function(data, metadata, preventUpdateAll) {
-    var fieldName;
-    for (fieldName in data) {
-      if (record.fields[fieldName]) {
-        record.fields[fieldName].value(data[fieldName]);
-        record.fields[fieldName].modified = false;
-      } else record.fields[fieldName] = api.wcl.Field({
-        data: data[fieldName],
-        metadata: metadata ? metadata[fieldName] : null,
-        dataSet: record.dataSet
-      });
-    }
-    if (!preventUpdateAll) record.updateAll();
-    record.modified = false;
-  };
-  record.each = function(callback) { // callback(fieldName, field)
-    var fieldName;
-    for (fieldName in record.fields) callback(fieldName, record.fields[fieldName]);
-  };
-  record.toObject = function() {
-    var result = {};
-    record.each(function(fieldName, field) { result[fieldName] = field.value(); });
-    return result;
-  };
-  record.toString = function() {
-    return JSON.stringify(record.toObject());
-  };
-  record.deltaObject = function() {
-    var result = {};
-    record.each(function(fieldName, field) {
-      if (field.modified) result[fieldName] = field.value();
-    });
-    return result;
-  };
-  record.deltaString = function() {
-    return JSON.stringify(record.deltaObject());
-  };
-  record.commit = function() {
-    if (record.modified) {
-      var recNo = record.dataSet.currentRecord,
-          data = record.dataSet.memory.data[recNo];
-      record.each(function(fieldName, field) {
-        if (field.modified) data[fieldName] = field.value();
-        field.modified = false;
-      });
-      record.modified = false;
-    }
-  };
-  record.rollback = function() {
-    if (record.modified) {
-      var recNo = record.dataSet.currentRecord,
-          data = record.dataSet.memory.data[recNo];
-      record.assign(data);
-    }
-  };
-  record.updateAll = function() {
-    record.each(function(fieldName, field) { field.value(field.data, true); });
-  };
-  if (params.data) record.assign(params.data, params.metadata, true);
-  return record;
-};
-
-api.wcl.DataSet = function(params) {
-  // implemented params: { data: Hash, metadata: Hash }
-  // not implemented:    { source: DataSource }
-  //
-  var dataSet = {};
-  dataSet.memory = api.wcl.MemoryDataSource({ data:[] });
-  dataSet.metadata = params.metadata;
-  dataSet.source = params.source;
-  dataSet.record = null;
-  dataSet.recordCount = 0;
-  dataSet.currentRecord = -1;
-  dataSet.modified = false;
-  dataSet.query = function(params, callback) {
-    dataSet.source.find(params, function(err, data) {
-      dataSet.assign(data);
-      callback();
-    });
-  };
-  dataSet.toString = function() {
-    return JSON.stringify(dataSet.memory.data);
-  };
-  dataSet.assign = function(data) {
-    if (data) {
-      dataSet.memory.data = data;
-      dataSet.recordCount = dataSet.memory.data.length;
-      dataSet.currentRecord = -1;
-      dataSet.first();
-    }
-  };
-  dataSet.move = function(recNo) {
-    if (recNo !== dataSet.currentRecord && recNo >= 0 && recNo < dataSet.recordCount) {
-      var data = dataSet.memory.data[recNo];
-      if (dataSet.record) {
-        if (dataSet.record.modified) dataSet.record.commit();
-        dataSet.record.assign(data);
-      } else dataSet.record = api.wcl.Record({ data: data, dataSet: dataSet });
-      dataSet.currentRecord = recNo;
-    }
-  };
-  dataSet.first = function() { dataSet.move(0); };
-  dataSet.next  = function() { dataSet.move(dataSet.currentRecord + 1); };
-  dataSet.prev  = function() { dataSet.move(dataSet.currentRecord - 1); };
-  dataSet.last  = function() { dataSet.move(dataSet.recordCount - 1); };
-  //
-  dataSet.updateCount = 0;
-  dataSet.beginUpdate = function() {
-    dataSet.updateCount++;
-  };
-  dataSet.endUpdate = function() {
-    dataSet.updateCount--;
-    if (dataSet.updateCount <= 0) {
-      dataSet.updateCount = 0;
-      dataSet.updateAll();
-    }
-  };
-  dataSet.updateAll = function() {
-    dataSet.record.updateAll();
-  };
-  dataSet.commit = function() {
-  };
-  dataSet.rollback = function() {
-  };
-
-  dataSet.assign(params.data);
-  return dataSet;
-};
-
-// Nonvisual or visual component
+// Send HTTP request
+//   method - HTTP verb (string)
+//   url - request URL (string)
+//   params - request parameters (hash, optional)
+//   parseResponse - boolean flag to parse JSON (boolean, optional)
+//   callback - function to call on response received
 //
-api.wcl.components.Component = function(obj) {
-};
-
-// Visual component
-api.wcl.components.Control = function(obj) {
-  api.wcl.components.Component(obj);
-  //
-};
-
-api.wcl.components.Iterator = function(obj) {
-  api.wcl.components.Control(obj);
-  //
-};
-
-api.wcl.components.Container = function(obj) {
-  api.wcl.components.Control(obj);
-  obj.wcl.controls = {};
-  if (obj.wcl.dataWcl.dataSet) obj.wcl.dataSet = global[obj.wcl.dataWcl.dataSet];
-};
-
-api.wcl.components.FieldControl = function(obj) {
-  api.wcl.components.Control(obj);
-  // obj.wcl.dataSet - autoassigned on load
-  obj.wcl.field = obj.wcl.dataSet.record.fields[obj.wcl.dataWcl.field];
-  obj.wcl.field.bindings.push(obj);
-};
-
-api.wcl.components.Label = function(obj) {
-  api.wcl.components.FieldControl(obj);
-  obj.innerHTML = '<span>' + obj.wcl.field.data + '</span>';
-  obj.value = function(value) {
-    if (value === undefined) return obj.textContent;
-    else if (obj.textContent !== value) obj.textContent = value;
-  };
-};
-
-api.wcl.components.Edit = function(obj) {
-  api.wcl.components.FieldControl(obj);
-  obj.innerHTML = '<input type="text" name="email">';
-  var edit = obj.children[0];
-  edit.value = obj.wcl.field.data;
-  edit.addEventListener('keyup', function(e) {
-    obj.wcl.field.value(this.value);
-  }, false);
-  obj.value = function(value) {
-    var edit = this.children[0];
-    if (value === undefined) return edit.value;
-    else if (edit.value !== value) edit.value = value;
-  };
-};
-
-api.wcl.components.Button = function(obj) {
-  api.wcl.components.Control(obj);
-  obj.innerHTML = '<a href="" onclick=""></a>';
-  var edit = obj.children[0];
-  edit.value = obj.wcl.field.data;
-  edit.addEventListener('click', function(e) {
-    console.log('button clicked');
-  }, false);
-};
-
-api.wcl.components.Table = function(obj) {
-  api.wcl.components.Control(obj);
-  //
-};
-
-// TODO: autobind on load
-//
-api.wcl.bind = function(params) { // { record:Record, container:element }
-  params.container.wcl = { record: params.record };
-  var dataWcl, element, component, elements = params.container.getElementsByTagName('div');
-  for (var i = 0; i < elements.length; i++) {
-    element = elements[i];
-    dataWcl = element.getAttribute('data-wcl');
-    if (dataWcl) {
-      element.wcl = { dataWcl: api.wcl.parse(dataWcl), record: params.record };
-      if (element.wcl.dataWcl.control) {
-        component = api.wcl.components[element.wcl.dataWcl.control];
-        global[element.wcl.dataWcl.name] = element;
-        component(element);
-      }
-    }
-  }
-};
-
-api.wcl.parse = function(json) {
-  var result;
-  eval('result = new Object(' + json + ')');
-  return result;
-};
-
-api.wcl.htmlEscape = function(content) {
-  return content.replace(/[&<>"'\/]/g,function(char) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[char]); });
-};
-
-api.wcl.template = function(tpl, data, escapeHtml) {
-  return tpl.replace(/@([\-\.0-9a-zA-Z]+)@/g, function(s, key) {
-    return escapeHtml ? api.wcl.htmlEscape(data[key]) : data[key];
-  });
-};
-
-api.wcl.templateHtml = function(tpl, data) {
-  return api.wcl.template(tpl, data, true);
-};
-
-api.wcl.request = function(method, url, params, parseResponse, callback) {
-  var key, req = new XMLHttpRequest(), data = [], value = '';
+api.rpc.request = function(method, url, params, parseResponse, callback) {
+  var key, data = [], value = '',
+      req = new XMLHttpRequest();
   req.open(method, url, true);
   for (key in params) {
     if (!params.hasOwnProperty(key)) continue;
@@ -1011,61 +915,42 @@ api.wcl.request = function(method, url, params, parseResponse, callback) {
   }
   data = data.join('&');
   req.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
-  req.setRequestHeader('Content-length', data.length);
-  req.setRequestHeader('Connection', 'close');
   req.onreadystatechange = function() {
     if (req.readyState === 4) {
       var err = null, res = req.responseText;
       if (req.status === 0 || req.status === 200) {
         if (parseResponse) {
-          try { res = JSON.parse(res); }
-          catch(e) { err = new Error('JSON parse code: ' + e); }
+          try {
+            res = JSON.parse(res);
+          } catch(e) {
+            err = new Error('JSON parse code: ' + e);
+          }
         }
       } else err = new Error('HTTP error code: ' + req.status);
-      callback(err, res);
+      if (callback) callback(err, res);
     }
   };
-  try { req.send(data); }
-  catch(e) { }
+  try {
+    req.send(data);
+  } catch(e) { }
 };
 
-api.wcl.get = function(url, params, callback) {
-  api.wcl.request('GET', url, params, true, callback);
-};
-
-api.wcl.post = function(url, params, callback) {
-  api.wcl.request('POST', url, params, true, callback);
-};
-
-api.wcl.autoInitialization = function() {
-  api.wcl.body = document.body || document.getElementsByTagName('body')[0];
-  var container, containerName, element, dataWcl, component,
-      elements = api.wcl.body.getElementsByTagName('div');
-  for (var i = 0; i < elements.length; i++) {
-    element = elements[i];
-    dataWcl = element.getAttribute('data-wcl');
-    if (dataWcl) {
-      element.wcl = { dataWcl: api.wcl.parse(dataWcl) }; // record: params.record
-      if (element.wcl.dataWcl.control === 'Container') api.wcl.containers[dataWcl.name] = element;
-    }
+// Send HTTP GET request
+//
+api.rpc.get = function(url, params, callback) {
+  if (arguments.length === 2) {
+    callback = params;
+    params = {};
   }
-  for (containerName in api.wcl.containers) {
-    container = api.wcl.containers[containerName];
-    elements = container.getElementsByTagName('div');
-    global[container.wcl.dataWcl.name] = container;
-    api.wcl.components.Container(container);
-    for (var j = 0; j < elements.length; j++) {
-      element = elements[j];
-      if (element.wcl.dataWcl.control) {
-        component = api.wcl.components[element.wcl.dataWcl.control];
-        container.wcl.controls[element.wcl.dataWcl.name] = element;
-        container[element.wcl.dataWcl.name] = element;
-        element.wcl.container = container;
-        element.wcl.dataSet = container.wcl.dataSet;
-        component(element);
-      }
-    }
-  }
+  api.rpc.request('GET', url, params, true, callback);
 };
 
-//addEvent(global, 'load', api.wcl.autoInitialization);
+// Send HTTP POST request
+//
+api.rpc.post = function(url, params, callback) {
+  if (arguments.length === 2) {
+    callback = params;
+    params = {};
+  }
+  api.rpc.request('POST', url, params, true, callback);
+};
