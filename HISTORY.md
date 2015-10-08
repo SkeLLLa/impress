@@ -1,3 +1,55 @@
+0.1.376 / 2015-10-08
+==================
+
+  * Changes in client-side impress.js library
+
+0.1.375 / 2015-10-07
+==================
+
+  * Changes in software balancer, issue #434
+  * Changed deploy scripts to use node.js 4.1.2
+
+0.1.374 / 2015-10-05
+==================
+
+  * Client-side for software balancer, issue #434
+
+0.1.373 / 2015-10-04
+==================
+
+  * Deprecated scale strategy ```specialization```, close #441
+  * New scale strategy ```bundle```, changed configs, see examples, close #440
+  * Start implementing software balancer, issue #434
+
+0.1.372 / 2015-10-03
+==================
+
+  * Fixed application.createSandbox, issue #402
+
+0.1.371 / 2015-10-02
+==================
+
+  * Client-side code refactoring, issue #427
+
+0.1.370 / 2015-09-29
+==================
+
+  * Changes and fixes in Impress client-server RPC over WebSocket, issue #216
+
+0.1.369 / 2015-09-27
+==================
+
+  * Implemented RPC request/get/post methods for Impress client-server RPC over WebSocket, issue #216
+  * Changed deploy scripts to use node.js 4.1.1
+
+0.1.368 / 2015-09-26
+==================
+
+  * Refactored client-side WebSocket API: api.ws
+  * Refactored client-side Server-Sent Events API: api.sse
+  * Refactored client-side RPC API: api.rpc, issue #216
+  * Refactored client-side AJAX API: api.ajax
+
 0.1.367 / 2015-09-23
 ==================
 

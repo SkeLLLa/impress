@@ -1,4 +1,4 @@
-﻿﻿'use strict';
+﻿'use strict';
 
 window.global = window;
 global.api = {};
@@ -8,6 +8,65 @@ global.application = {};
 api.impress.falseness = function() { return false; };
 api.impress.trueness = function() { return true; };
 api.impress.emptyness = function() { };
+
+// Make URL absolute
+//
+api.impress.absoluteUrl = function(url) {
+  if (url.charAt(0) === '/') {
+    var site = window.location,
+        absoluteUrl = 'ws';
+    if (site.protocol === 'https:') absoluteUrl += 's';
+    absoluteUrl += '://' + site.host + url;
+    return absoluteUrl;
+  } else return url;
+};
+
+// Return random number less then one argument random(100) or between two argumants random(50,150)
+//
+api.impress.random = function(min, max) {
+  if (arguments.length === 1) {
+    max = min;
+    min = 0;
+  }
+  return min + Math.floor(Math.random() * (max - min + 1));
+};
+
+// Simple EventEmitter implementation
+//
+api.events = {};
+
+// EventEmitter class
+//
+api.events.EventEmitter = function() {
+  api.events.mixinEmitter(this);
+};
+
+// EventEmitter mixin
+//
+api.events.mixinEmitter = function(ee) {
+
+  ee.listeners = {};
+
+  // Add named event handler
+  //
+  ee.on = function(name, callback) {
+    var namedEvent = ee.listeners[name];
+    if (!namedEvent) ee.listeners[name] = [callback];
+    else namedEvent.push(callback);
+  };
+
+  // Emit named event
+  //
+  ee.emit = function(name, data) {
+    var namedEvent = ee.listeners[name];
+    if (namedEvent) namedEvent.forEach(function(callback) {
+      callback(data);
+    });
+  };
+
+  return ee;
+
+};
 
 // DOM utilities
 //
@@ -117,6 +176,11 @@ if (document.getElementsByClassName) {
 // Add element class
 //
 api.dom.addClass = function(element, className) {
+  element = api.dom.element(element);
+  if (!element) return false;
+  if (element.classList) {
+    return element.classList.add(className);
+  }
   var regex = new RegExp('(^|\\s)' + className + '(\\s|$)', 'g');
   if (regex.test(element.className)) {
     element.className = (element.className + ' ' + className).replace(/\s+/g, ' ').replace(/(^ | $)/g, '');
@@ -127,6 +191,11 @@ api.dom.addClass = function(element, className) {
 // Remove element class
 //
 api.dom.removeClass = function(element, className) {
+  element = api.dom.element(element);
+  if (!element) return false;
+  if (element.classList) {
+    return element.classList.remove(className);
+  }
   var regex = new RegExp('(^|\\s)' + className + '(\\s|$)', 'g');
   element.className = element.className.replace(regex, '$1').replace(/\s+/g, ' ').replace(/(^ | $)/g, '');
 };
@@ -135,12 +204,21 @@ api.dom.removeClass = function(element, className) {
 //
 api.dom.hasClass = function(element, className) {
   element = api.dom.element(element);
+  if (!element) return false;
+  if (element.classList) {
+    return element.classList.contains(className);
+  }
   return element.className.match(new RegExp('(^|\b)' + className + '($|\b)'));
 };
 
 // Toggle element class
 //
 api.dom.toggleClass = function(element, className) {
+  element = api.dom.element(element);
+  if (!element) return false;
+  if (element.classList) {
+    return element.classList.toggle(className);
+  }
   element = api.dom.element(element);
   if (api.dom.hasClass(element, className)) api.dom.removeClass(element, className);
   else api.dom.addClass(element, className);
@@ -155,6 +233,8 @@ api.dom.insertAfter = function(parent, node, referenceNode) {
 // Add element event
 //
 api.dom.addEvent = function(element, event, fn) {
+  element = api.dom.element(element);
+  if (!element) return false;
   if (element.addEventListener) {
     return element.addEventListener(event, fn, false);
   } else if (element.attachEvent) {
@@ -168,6 +248,12 @@ api.dom.addEvent = function(element, event, fn) {
 // Remove element event
 //
 api.dom.removeEvent = function(element, event, fn) {
+  if (arguments.length === 2) {
+    fn = element;
+    element = window;
+  }
+  element = api.dom.element(element);
+  if (!element) return false;
   if (element.removeEventListener) {
     return element.removeEventListener(event, fn, false);
   } else if (element.detachEvent) {
@@ -182,8 +268,7 @@ api.dom.on = function(event, element, fn) {
     fn = element;
     element = window;
   }
-  element = api.dom.element(element);
-  if (element) api.dom.addEvent(element, event, fn);
+  api.dom.addEvent(element, event, fn);
 };
 
 // Use element or selector
@@ -274,7 +359,7 @@ api.dom.show = function(element) {
 //
 api.dom.load = function(url, element, callback) {
   element.innerHTML = '<div class="progress"></div>';
-  api.rpc.get(url, {}, function(err, res) {
+  api.ajax.get(url, {}, function(err, res) {
     element.innerHTML = res;
     if (callback) callback(err, res, element);
   });
@@ -282,126 +367,176 @@ api.dom.load = function(url, element, callback) {
 
 // Center element
 //
-api.dom.alignCenter = function(element) {
-  // TODO: implement api.dom.alignCenter
+api.dom.alignCenter = function(element, context, styles) {
+  var wrapper;
+  var popupMargin = (element.style.margin.match(/\d+/) || [0])[0] || 0;
+
+  if (api.dom.hasClass(element.parentNode, 'centering-wrapper')) {
+    wrapper = element.parentNode;
+  } else {
+    wrapper = api.dom.wrapElement(element, 'centering-wrapper');
+    if (styles) api.dom.setStyles(wrapper, styles);
+    if (context && context.appendChild) {
+      context.appendChild(wrapper);
+    }
+    api.dom.setStyles(wrapper, {
+      'position': 'absolute',
+      'z-index': '10',
+      'text-align': 'center', //horizontal centering
+      'overflow': 'hidden'
+    });
+    api.dom.setStyles(element, {
+      'display': 'inline-block',  //text-like behaviour for centering by line-height and vertical-align
+      'box-sizing': 'border-box', //include padding to height/width
+      'text-align': 'initial',    //rewrite wrapper's value
+      'line-height': 'normal',    //rewrite wrapper's value
+      'vertical-align': 'middle'  //vertical centering
+    });
+  }
+  api.dom.setStyles(wrapper, {
+    'height': window.innerHeight + 'px',
+    'width': window.innerWidth + 'px',
+    'line-height': window.innerHeight + 'px' //vertical centering
+  });
+  api.dom.setStyles(element, {
+    'max-width': (wrapper.offsetWidth - popupMargin * 2) + 'px',
+    'max-height': (wrapper.offsetHeight - popupMargin * 2) + 'px'
+  });
+
+  return wrapper;
 };
 
 // Popup
 //
-api.dom.popup = function(innerContent) {
-  // TODO: decompose api.dom.popup
+api.dom.wrapElement = function(element, classname) {
+  var wrapper = document.createElement('div');
+  if (classname) api.dom.addClass(wrapper, classname);
+  wrapper.appendChild(element);
+  return wrapper;
+};
 
-  var popup = document.createElement('div'),
-      wrapper = document.createElement('div'),
-      content = document.createElement('div');
-
-  popup.appendChild(content);
-  wrapper.appendChild(popup);
-  api.dom.body.appendChild(wrapper);
-
-  api.dom.setStyles(wrapper, {
-    'height': window.innerHeight + 'px',
-    'width': window.innerWidth + 'px',
-    'line-height': window.innerHeight + 'px', //vertical centering
-    'position': 'absolute',
-    'z-index': '10',
-    'text-align': 'center', //horizontal centering
-    'overflow': 'hidden',
-    'transition': '0.5s',
-    'background': 'rgba(0, 0, 0, 0.5)',
-    'opacity': '0',
-  });
-  setTimeout(function() {
-    api.dom.setStyles(wrapper, {
-      'opacity': '1',
-    });
-  }, 50);
-  var POPUP_MARGIN = 10;
-  var POPUP_PADDING = {
-    VER: 20,
-    HOR: 15,
-  };
-  api.dom.setStyles(popup, {
-    display: 'inline-block',
-    background: 'white',
-    'box-shadow': '2px 2px 10px black',
-    'min-width': '300px',
-    'max-width': (wrapper.offsetWidth - POPUP_MARGIN * 2 ) + 'px',
-    'max-height': (wrapper.offsetHeight - POPUP_MARGIN * 2 ) + 'px',
-    'min-height': '100px',
-    'overflow': 'auto',
-    'margin': POPUP_MARGIN + 'px',
-    'padding': POPUP_PADDING.VER + 'px ' + POPUP_PADDING.HOR + 'px',
-    'box-sizing': 'border-box', //include padding to height/width
-    'text-align': 'initial',
-    'line-height': 'initial',
-    'vertical-align': 'middle', //vertical centering
-  });
-  api.dom.setStyles(content, {
-    'display': 'inline-block',
-  });
-  var bodyPrevOverflow = api.dom.body.style.overflow;
-  api.dom.setStyles(api.dom.body, {
-    'overflow': 'hidden'
-  });
-
-  /**@type {HTMLElement}*/
-  var element;
-    element = api.dom.element(innerContent);
-  if (element) {
-    var previouseParent = element.parentNode;
-    var previouseSibling = element.nextElementSibling;
-    content.appendChild(element);
-  } else if (typeof(innerContent) === 'string') {
-    content.innerHTML = innerContent;
-  }
-
-  api.dom.on('resize', function() {
+api.dom.generateResizeHandler = function(wrapper, popup, popupMargin) {
+  return function() {
     api.dom.setStyles(wrapper, {
       'height': window.innerHeight + 'px',
       'width': window.innerWidth + 'px',
-      'line-height': window.innerHeight + 'px',
+      'line-height': window.innerHeight + 'px'
     });
     api.dom.setStyles(popup, {
-      'max-width': (wrapper.offsetWidth - POPUP_MARGIN * 2 ) + 'px',
-      'max-height': (wrapper.offsetHeight - POPUP_MARGIN * 2 ) + 'px',
+      'max-width': (wrapper.offsetWidth - popupMargin * 2) + 'px',
+      'max-height': (wrapper.offsetHeight - popupMargin * 2) + 'px'
     });
-  });
+  };
+};
 
-  api.dom.on('click', wrapper, function handler(event) {
-    if (event.target !== wrapper) return true;
+api.dom.generateClosePopup = function(wrapper, content, resizeHandler, prevPlaceRefs) {
+  var closePopup = function(event) {
+    if (event.target !== wrapper && event.target !== closePopup.closeElement) return true;
     api.dom.setStyles(wrapper, {
       'opacity': '0'
     });
     setTimeout(function() {
-      if (previouseParent)previouseParent.insertBefore(content.childNodes.item(0), previouseSibling);
+      if (prevPlaceRefs.previousParent) {
+        prevPlaceRefs.previousParent.insertBefore(
+          content.childNodes.item(0),
+          prevPlaceRefs.previousSibling
+        );
+      }
       api.dom.body.removeChild(wrapper);
-      api.dom.body.style.overflow = bodyPrevOverflow;
+      api.dom.body.style.overflow = api.dom.body.bodyPrevOverflow;
     }, 500); //wait 0.5s for animation end
-    api.dom.removeEvent(wrapper, 'click', handler);
+    api.dom.removeEvent(wrapper, 'click', closePopup);
+    api.dom.removeEvent('resize', resizeHandler);
     event.stopImmediatePropagation();
     return false;
+  };
+  return closePopup;
+};
+
+function injectInnerContent(content, contentHolder) {
+  var contentNode = api.dom.element(content),
+      prevPlaceRefs;
+  if (contentNode) {
+    prevPlaceRefs = {};
+    prevPlaceRefs.previousParent = contentNode.parentNode;
+    prevPlaceRefs.previousSibling = contentNode.nextElementSibling;
+    contentHolder.appendChild(contentNode);
+  } else if (typeof(content) === 'string') {
+    contentHolder.innerHTML = content;
+  }
+  return prevPlaceRefs;
+}
+
+api.dom.popup = function(content) {
+  var popupMargin = 10;
+  var popupPadding = {
+    x: api.dom.detectScrollbarWidth() || 20,
+    y: 20,
+  };
+
+  var popup = document.createElement('div'),
+      contentHolder = document.createElement('div');
+
+  popup.appendChild(contentHolder);
+
+  api.dom.setStyles(popup, {
+    'background': 'white',
+    'box-shadow': '0 0 15px #333',
+    'min-width': '300px',
+    'min-height': '100px',
+    'overflow': 'auto',
+    'margin': popupMargin + 'px',
+    'padding': popupPadding.y + 'px ' + popupPadding.x + 'px'
+  });
+  var wrapper = api.dom.alignCenter(popup, api.dom.body, {
+    'transition': 'opacity 0.5s',
+    'background': 'rgba(0, 0, 0, 0.5)',
+    'opacity': '0'
+  });
+  api.dom.setStyles(wrapper, {
+    'opacity': '1'
+  });
+  api.dom.setStyles(contentHolder, {
+    'display': 'inline-block'
+  });
+  api.dom.body.bodyPrevOverflow = api.dom.body.style.overflow;
+  api.dom.setStyles(api.dom.body, {
+    'overflow': 'hidden'
+  });
+  var prevPlaceRefs = injectInnerContent(content, contentHolder);
+  var resizeHandler = api.dom.alignCenter.bind(null, popup);
+  var closePopup = api.dom.generateClosePopup(wrapper, contentHolder, resizeHandler, prevPlaceRefs);
+  api.dom.on('resize', resizeHandler);
+  api.dom.on('click', wrapper, closePopup);
+  return closePopup;
+};
+
+api.dom.detectScrollbarWidth = function() {
+  var scrollDiv = document.createElement("div");
+  api.dom.setStyles(scrollDiv, {
+    'width': '100px',
+    'height': '100px',
+    'overflow': 'scroll',
+    'position': 'absolute',
+    'top': '-9999px'
+  });
+  api.dom.body.appendChild(scrollDiv);
+
+  var scrollbarWidth = scrollDiv.offsetWidth - scrollDiv.clientWidth;
+  document.body.removeChild(scrollDiv);
+
+  return scrollbarWidth;
+};
+
+function dashedToUpperCase(key) {
+  return key.replace(/-(\w)/g, function(match, p1) {
+    return p1.toUpperCase();
   });
 };
 
-// Set given styles to element
+//transform CSS string to Object
 //
-api.dom.setStyles = function(element, styles) {
-  // TODO: decompose api.dom.setStyles
-
-  var props = { //taken from Emmet lib - https://github.com/emmetio/emmet/blob/master/lib/resolver/css.js#L155
-    'webkit': 'animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-clip, background-composite, background-origin, background-size, border-fit, border-horizontal-spacing, border-image, border-vertical-spacing, box-align, box-direction, box-flex, box-flex-group, box-lines, box-ordinal-group, box-orient, box-pack, box-reflect, box-shadow, color-correction, column-break-after, column-break-before, column-break-inside, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-span, column-width, dashboard-region, font-smoothing, highlight, hyphenate-character, hyphenate-limit-after, hyphenate-limit-before, hyphens, line-box-contain, line-break, line-clamp, locale, margin-before-collapse, margin-after-collapse, marquee-direction, marquee-increment, marquee-repetition, marquee-style, mask-attachment, mask-box-image, mask-box-image-outset, mask-box-image-repeat, mask-box-image-slice, mask-box-image-source, mask-box-image-width, mask-clip, mask-composite, mask-image, mask-origin, mask-position, mask-repeat, mask-size, nbsp-mode, perspective, perspective-origin, rtl-ordering, text-combine, text-decorations-in-effect, text-emphasis-color, text-emphasis-position, text-emphasis-style, text-fill-color, text-orientation, text-security, text-stroke-color, text-stroke-width, transform, transition, transform-origin, transform-style, transition-delay, transition-duration, transition-property, transition-timing-function, user-drag, user-modify, user-select, writing-mode, svg-shadow, box-sizing, border-radius',
-    'moz': 'animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-inline-policy, binding, border-bottom-colors, border-image, border-left-colors, border-right-colors, border-top-colors, box-align, box-direction, box-flex, box-ordinal-group, box-orient, box-pack, box-shadow, box-sizing, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-width, float-edge, font-feature-settings, font-language-override, force-broken-image-icon, hyphens, image-region, orient, outline-radius-bottomleft, outline-radius-bottomright, outline-radius-topleft, outline-radius-topright, perspective, perspective-origin, stack-sizing, tab-size, text-blink, text-decoration-color, text-decoration-line, text-decoration-style, text-size-adjust, transform, transform-origin, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-focus, user-input, user-modify, user-select, window-shadow, background-clip, border-radius',
-    'ms': 'accelerator, backface-visibility, background-position-x, background-position-y, behavior, block-progression, box-align, box-direction, box-flex, box-line-progression, box-lines, box-ordinal-group, box-orient, box-pack, content-zoom-boundary, content-zoom-boundary-max, content-zoom-boundary-min, content-zoom-chaining, content-zoom-snap, content-zoom-snap-points, content-zoom-snap-type, content-zooming, filter, flow-from, flow-into, font-feature-settings, grid-column, grid-column-align, grid-column-span, grid-columns, grid-layer, grid-row, grid-row-align, grid-row-span, grid-rows, high-contrast-adjust, hyphenate-limit-chars, hyphenate-limit-lines, hyphenate-limit-zone, hyphens, ime-mode, interpolation-mode, layout-flow, layout-grid, layout-grid-char, layout-grid-line, layout-grid-mode, layout-grid-type, line-break, overflow-style, perspective, perspective-origin, perspective-origin-x, perspective-origin-y, scroll-boundary, scroll-boundary-bottom, scroll-boundary-left, scroll-boundary-right, scroll-boundary-top, scroll-chaining, scroll-rails, scroll-snap-points-x, scroll-snap-points-y, scroll-snap-type, scroll-snap-x, scroll-snap-y, scrollbar-arrow-color, scrollbar-base-color, scrollbar-darkshadow-color, scrollbar-face-color, scrollbar-highlight-color, scrollbar-shadow-color, scrollbar-track-color, text-align-last, text-autospace, text-justify, text-kashida-space, text-overflow, text-size-adjust, text-underline-position, touch-action, transform, transform-origin, transform-origin-x, transform-origin-y, transform-origin-z, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-select, word-break, wrap-flow, wrap-margin, wrap-through, writing-mode',
-    'o': 'dashboard-region, animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, border-image, link, link-source, object-fit, object-position, tab-size, table-baseline, transform, transform-origin, transition, transition-delay, transition-duration, transition-property, transition-timing-function, accesskey, input-format, input-required, marquee-dir, marquee-loop, marquee-speed, marquee-style'
-  };
-
-  var p;
-  for (p in props) {
-    props[p] = props[p].split(/\s*,\s*/);
-  }
-
-  //transform CSS string to Object
+var cssStringToObject = function(styles) {
   if (typeof(styles) === 'string') {
     var stylesStr = styles;
     styles = {};
@@ -414,31 +549,47 @@ api.dom.setStyles = function(element, styles) {
       styles[key] = val; //storing to object
     });
   }
+  return styles;
+};
 
-  if (typeof(styles) === 'object') {
-    for (var i in styles) {
-      if (!i || !styles[i]) break;
-      var keys = [i];
-      //adding vendor prefixes if needed
-      for (p in props) {
-        if (props[p].indexOf(i) >= 0) {
-          keys.push('-' + p + '-' + i);
-        }
-      }
-      for (var j in keys) {
-        var key = dashedToUpperCase(keys[j]);
-        element.style[key] = styles[i];
-      }
+function extractPrefixedStyles(styleName) {
+  styleName = styleName || styleName;
+  var keys = [styleName];
+  //adding vendor prefixes if needed
+  for (var pref in api.dom.styleProps) {
+    if (api.dom.styleProps[pref].indexOf(styleName) >= 0) {
+      keys.push('-' + pref + '-' + styleName);
+    }
+  }
+  return keys;
+};
+
+// Set given styles to element
+//
+api.dom.setStyles = function(element, styles) {
+  styles = cssStringToObject(styles);
+  if (typeof(styles) !== 'object') return false;
+
+  for (var styleName in styles) {
+    if (!styles[styleName]) break;
+    var styleNames = extractPrefixedStyles(styleName);
+    for (var dashedName in styleNames) {
+      var key = dashedToUpperCase(styleNames[dashedName]);
+      element.style[key] = styles[styleName];
     }
   }
   return true;
-
-  function dashedToUpperCase(key) {
-    return key.replace(/-(\w)/g, function(match, p1) {
-      return p1.toUpperCase();
-    });
-  }
 };
+
+api.dom.styleProps = { //taken from Emmet lib - https://github.com/emmetio/emmet/blob/master/lib/resolver/css.js#L155
+  'webkit': 'animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-clip, background-composite, background-origin, background-size, border-fit, border-horizontal-spacing, border-image, border-vertical-spacing, box-align, box-direction, box-flex, box-flex-group, box-lines, box-ordinal-group, box-orient, box-pack, box-reflect, box-shadow, color-correction, column-break-after, column-break-before, column-break-inside, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-span, column-width, dashboard-region, font-smoothing, highlight, hyphenate-character, hyphenate-limit-after, hyphenate-limit-before, hyphens, line-box-contain, line-break, line-clamp, locale, margin-before-collapse, margin-after-collapse, marquee-direction, marquee-increment, marquee-repetition, marquee-style, mask-attachment, mask-box-image, mask-box-image-outset, mask-box-image-repeat, mask-box-image-slice, mask-box-image-source, mask-box-image-width, mask-clip, mask-composite, mask-image, mask-origin, mask-position, mask-repeat, mask-size, nbsp-mode, perspective, perspective-origin, rtl-ordering, text-combine, text-decorations-in-effect, text-emphasis-color, text-emphasis-position, text-emphasis-style, text-fill-color, text-orientation, text-security, text-stroke-color, text-stroke-width, transform, transition, transform-origin, transform-style, transition-delay, transition-duration, transition-property, transition-timing-function, user-drag, user-modify, user-select, writing-mode, svg-shadow, box-sizing, border-radius',
+  'moz': 'animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, appearance, backface-visibility, background-inline-policy, binding, border-bottom-colors, border-image, border-left-colors, border-right-colors, border-top-colors, box-align, box-direction, box-flex, box-ordinal-group, box-orient, box-pack, box-shadow, box-sizing, column-count, column-gap, column-rule-color, column-rule-style, column-rule-width, column-width, float-edge, font-feature-settings, font-language-override, force-broken-image-icon, hyphens, image-region, orient, outline-radius-bottomleft, outline-radius-bottomright, outline-radius-topleft, outline-radius-topright, perspective, perspective-origin, stack-sizing, tab-size, text-blink, text-decoration-color, text-decoration-line, text-decoration-style, text-size-adjust, transform, transform-origin, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-focus, user-input, user-modify, user-select, window-shadow, background-clip, border-radius',
+  'ms': 'accelerator, backface-visibility, background-position-x, background-position-y, behavior, block-progression, box-align, box-direction, box-flex, box-line-progression, box-lines, box-ordinal-group, box-orient, box-pack, content-zoom-boundary, content-zoom-boundary-max, content-zoom-boundary-min, content-zoom-chaining, content-zoom-snap, content-zoom-snap-points, content-zoom-snap-type, content-zooming, filter, flow-from, flow-into, font-feature-settings, grid-column, grid-column-align, grid-column-span, grid-columns, grid-layer, grid-row, grid-row-align, grid-row-span, grid-rows, high-contrast-adjust, hyphenate-limit-chars, hyphenate-limit-lines, hyphenate-limit-zone, hyphens, ime-mode, interpolation-mode, layout-flow, layout-grid, layout-grid-char, layout-grid-line, layout-grid-mode, layout-grid-type, line-break, overflow-style, perspective, perspective-origin, perspective-origin-x, perspective-origin-y, scroll-boundary, scroll-boundary-bottom, scroll-boundary-left, scroll-boundary-right, scroll-boundary-top, scroll-chaining, scroll-rails, scroll-snap-points-x, scroll-snap-points-y, scroll-snap-type, scroll-snap-x, scroll-snap-y, scrollbar-arrow-color, scrollbar-base-color, scrollbar-darkshadow-color, scrollbar-face-color, scrollbar-highlight-color, scrollbar-shadow-color, scrollbar-track-color, text-align-last, text-autospace, text-justify, text-kashida-space, text-overflow, text-size-adjust, text-underline-position, touch-action, transform, transform-origin, transform-origin-x, transform-origin-y, transform-origin-z, transform-style, transition, transition-delay, transition-duration, transition-property, transition-timing-function, user-select, word-break, wrap-flow, wrap-margin, wrap-through, writing-mode',
+  'o': 'dashboard-region, animation, animation-delay, animation-direction, animation-duration, animation-fill-mode, animation-iteration-count, animation-name, animation-play-state, animation-timing-function, border-image, link, link-source, object-fit, object-position, tab-size, table-baseline, transform, transform-origin, transition, transition-delay, transition-duration, transition-property, transition-timing-function, accesskey, input-format, input-required, marquee-dir, marquee-loop, marquee-speed, marquee-style'
+};
+for (var i in api.dom.styleProps) {
+  api.dom.styleProps[i] = api.dom.styleProps[i].split(/\s*,\s*/);
+}
 
 // Confirmation dialog
 //   Buttons: ['Yes', 'No', 'Ok', 'Cancel']
@@ -557,134 +708,116 @@ api.cookie.delete = function(name) {
   api.cookie.set(name, null, { expires: -1 });
 };
 
-// RPC API
+// Tabs API
 //
-api.rpc = {};
-api.rpc.tabId = 0;
-api.rpc.tabKey = '';
-api.rpc.masterTab = false;
-api.rpc.masterTabId = 0;
-api.rpc.masterTabKey = '';
-api.rpc.heartbeatInterval = 2000;
-api.rpc.heartbeatEvent = null;
-api.rpc.initialized = false;
-api.rpc.initializationCallbacks = [];
-api.rpc.supportsLocalStorage = false;
-api.rpc.onCallbacks = {};
-
-// Add named event handler
-//
-api.rpc.on = function(name, callback) {
-  var namedEvent = api.rpc.onCallbacks[name];
-  if (!namedEvent) api.rpc.onCallbacks[name] = [callback];
-  else namedEvent.push(callback);
-};
-
-// Emit named event
-//
-api.rpc.emit = function(name, data) {
-  var namedEvent = api.rpc.onCallbacks[name];
-  if (namedEvent) namedEvent.forEach(function(callback) {
-    callback(name, data);
-  });
-};
+api.tabs = new api.events.EventEmitter();
+api.tabs.tabId = 0;
+api.tabs.tabKey = '';
+api.tabs.masterTab = false;
+api.tabs.masterTabId = 0;
+api.tabs.masterTabKey = '';
+api.tabs.heartbeatInterval = 2000;
+api.tabs.heartbeatEvent = null;
+api.tabs.initialized = false;
+api.tabs.initializationCallbacks = [];
+api.tabs.supportsLocalStorage = false;
 
 // localStorage structure:
-//   api.rpc.master = tabId e.g. 1
-//   api.rpc.tab1 = Date.now() e.g. 1424185702490
-//   api.rpc.tab2 = Date.now() e.g. 1424185704772
-//   api.rpc.newtab = tabId (signal to master)
-//   api.rpc.event = signal in format { name:s, data:d, time: Date.now() }
+//   api.tabs.master = tabId e.g. 1
+//   api.tabs.tab1 = Date.now() e.g. 1424185702490
+//   api.tabs.tab2 = Date.now() e.g. 1424185704772
+//   api.tabs.newtab = tabId (signal to master)
+//   api.tabs.event = signal in format { name:s, data:d, time: Date.now() }
 //
-api.rpc.initializationWait = function(callback) {
-  if (!api.rpc.initialized) api.rpc.initializationCallbacks.push(callback);
+api.tabs.initializationWait = function(callback) {
+  if (!api.tabs.initialized) api.tabs.initializationCallbacks.push(callback);
   else callback();
 };
 
-// Initialize RPC
+// Initialize tabs
 //
-api.rpc.initialize = function() {
+api.tabs.initialize = function() {
   try {
-    api.rpc.supportsLocalStorage = 'localStorage' in window && window.localStorage !== null;
+    api.tabs.supportsLocalStorage = 'localStorage' in window && window.localStorage !== null;
   } catch(e) {
   }
-  if (api.rpc.supportsLocalStorage) api.rpc.initializeConnection();
+  if (api.tabs.supportsLocalStorage) api.tabs.initializeConnection();
 };
 
-// Initialize RPC done
+// Initialize tabs done
 //
-api.rpc.initializeDone = function() {
-  api.rpc.heartbeatEvent = setInterval(api.rpc.listenHandler, api.rpc.heartbeatInterval);
-  api.rpc.initialized = true;
-  api.rpc.initializationCallbacks.forEach(function(callback) {
+api.tabs.initializeDone = function() {
+  api.tabs.heartbeatEvent = setInterval(api.tabs.listenHandler, api.tabs.heartbeatInterval);
+  api.tabs.initialized = true;
+  api.tabs.initializationCallbacks.forEach(function(callback) {
     callback();
   });
-  api.rpc.initializationCallbacks = [];
+  api.tabs.initializationCallbacks = [];
 };
 
 // Get free browser tab
 //
-api.rpc.getFreeTab = function() {
+api.tabs.getFreeTab = function() {
   for (var id = 1;;id++) {
-    if (typeof(localStorage['impress.rpc.tab' + id]) === 'undefined') return id;
+    if (typeof(localStorage['impress.tab' + id]) === 'undefined') return id;
   }
 };
 
-// Initialize RPC connection
+// Initialize tabs connection
 //
-api.rpc.initializeConnection = function() {
-  if (!api.rpc.initialized) {
-    api.rpc.tabId = api.rpc.getFreeTab();
-    api.rpc.tabKey = 'impress.rpc.tab' + api.rpc.tabId;
-    api.rpc.heartbeat();
-    api.rpc.heartbeatEvent = setInterval(api.rpc.heartbeat, api.rpc.heartbeatInterval);
-    localStorage['impress.rpc.newtab'] = api.rpc.tabId;
-    global.addEventListener('storage', api.rpc.onStorageChange, false);
+api.tabs.initializeConnection = function() {
+  if (!api.tabs.initialized) {
+    api.tabs.tabId = api.tabs.getFreeTab();
+    api.tabs.tabKey = 'impress.tab' + api.tabs.tabId;
+    api.tabs.heartbeat();
+    api.tabs.heartbeatEvent = setInterval(api.tabs.heartbeat, api.tabs.heartbeatInterval);
+    localStorage['impress.newtab'] = api.tabs.tabId;
+    global.addEventListener('storage', api.tabs.onStorageChange, false);
   }
-  var master = localStorage['impress.rpc.master'];
-  if (master) api.rpc.setMaster(master);
-  else api.rpc.createMaster();
-  api.rpc.initializeDone();
+  var master = localStorage['impress.master'];
+  if (master) api.tabs.setMaster(master);
+  else api.tabs.createMaster();
+  api.tabs.initializeDone();
 };
 
 // Master tab heartbeat
 //
-api.rpc.heartbeat = function() {
-  localStorage[api.rpc.tabKey] = Date.now();
-  if (api.rpc.masterTab) api.rpc.checkTabs();
-  else api.rpc.checkMaster();
+api.tabs.heartbeat = function() {
+  localStorage[api.tabs.tabKey] = Date.now();
+  if (api.tabs.masterTab) api.tabs.checkTabs();
+  else api.tabs.checkMaster();
 };
 
 // Check master tab
 //
-api.rpc.checkMaster = function() {
-  var masterNow = parseInt(localStorage[api.rpc.masterTabKey], 10);
-  if (Date.now() - masterNow > api.rpc.heartbeatInterval * 2) {
+api.tabs.checkMaster = function() {
+  var masterNow = parseInt(localStorage[api.tabs.masterTabKey], 10);
+  if (Date.now() - masterNow > api.tabs.heartbeatInterval * 2) {
     var tabId, tabNow, key,
         keys = Object.keys(localStorage),
         maxId = 0,
         now = Date.now();
     for (var i = 0; i < keys.length; i++) {
       key = keys[i];
-      if (key.indexOf('impress.rpc.tab') === 0) {
+      if (key.indexOf('impress.tab') === 0) {
         tabId = parseInt(key.match(/\d+/)[0], 10);
         tabNow = parseInt(localStorage[key], 10);
-        if (now - tabNow < api.rpc.heartbeatInterval * 2 && tabId > maxId) maxId = tabId;
+        if (now - tabNow < api.tabs.heartbeatInterval * 2 && tabId > maxId) maxId = tabId;
       }
     }
-    if (maxId === api.rpc.tabId) api.rpc.createMaster();
+    if (maxId === api.tabs.tabId) api.tabs.createMaster();
   }
 };
 
 // Check browser babs
 //
-api.rpc.checkTabs = function() {
+api.tabs.checkTabs = function() {
   var tabNow, key, keys = Object.keys(localStorage);
   for (var i = 0; i < keys.length; i++) {
     key = keys[i];
-    if (key !== api.rpc.tabKey && key.indexOf('impress.rpc.tab') === 0) {
+    if (key !== api.tabs.tabKey && key.indexOf('impress.tab') === 0) {
       tabNow = parseInt(localStorage[key], 10);
-      if (Date.now() - tabNow > api.rpc.heartbeatInterval * 2) {
+      if (Date.now() - tabNow > api.tabs.heartbeatInterval * 2) {
         localStorage.removeItem(key);
       }
     }
@@ -693,139 +826,49 @@ api.rpc.checkTabs = function() {
 
 // Set master tab
 //
-api.rpc.setMaster = function(id) {
-  api.rpc.masterTab = false;
-  api.rpc.masterTabId = id;
-  api.rpc.masterTabKey = 'impress.rpc.tab' + id;
+api.tabs.setMaster = function(id) {
+  api.tabs.masterTab = false;
+  api.tabs.masterTabId = id;
+  api.tabs.masterTabKey = 'impress.tab' + id;
 };
 
 // Create master tab
 //
-api.rpc.createMaster = function() {
-  api.rpc.masterTab = true;
-  api.rpc.masterTabId = api.rpc.tabId;
-  api.rpc.masterTabKey = api.rpc.tabKey;
-  localStorage['impress.rpc.master'] = api.rpc.tabId;
-  api.rpc.initializeDone();
+api.tabs.createMaster = function() {
+  api.tabs.masterTab = true;
+  api.tabs.masterTabId = api.tabs.tabId;
+  api.tabs.masterTabKey = api.tabs.tabKey;
+  localStorage['impress.master'] = api.tabs.tabId;
+  api.tabs.initializeDone();
 };
 
-// RPC cross-tab communication using localstorage
+// Impress cross-tab communication using localstorage
 //
-api.rpc.onStorageChange = function(e) {
-  if (e.key === 'impress.rpc.event') {
+api.tabs.onStorageChange = function(e) {
+  if (e.key === 'impress.event') {
     var event = JSON.parse(e.newValue);
-    api.rpc.emit(event.name, event.data);
-  } else if (api.rpc.masterTab) {
-    if (e.key === 'impress.rpc.newtab') api.rpc.heartbeat();
-    else if (e.key === 'impress.rpc.master') console.log('WARNING: master collision');
+    api.tabs.emit(event.name, event.data);
+  } else if (api.tabs.masterTab) {
+    if (e.key === 'impress.newtab') api.tabs.heartbeat();
+    else if (e.key === 'impress.master') console.log('WARNING: master collision');
   } else {
-    if (e.key === 'impress.rpc.master') api.rpc.setMaster(e.newValue);
+    if (e.key === 'impress.master') api.tabs.setMaster(e.newValue);
   }
 };
 
 // Emit cross-tab event
 //
-api.rpc.emitTabs = function(name, data) {
-  localStorage['impress.rpc.event'] = JSON.stringify({ name: name, data: data, time: Date.now() });
+api.tabs.emitTabs = function(name, data) {
+  localStorage['impress.event'] = JSON.stringify({ name: name, data: data, time: Date.now() });
 };
 
-// Make URL absolute
+// Initialize tabs modile
 //
-api.rpc.absoluteUrl = function(url) {
-  if (url.charAt(0) === '/') {
-    var site = window.location,
-        absoluteUrl = 'ws';
-    if (site.protocol === 'https:') absoluteUrl += 's';
-    absoluteUrl += '://' + site.host + url;
-    return absoluteUrl;
-  } else return url;
-};
+api.tabs.initialize();
 
-// Create websocket instance with RPC wrapper
+// Prepare AJAX namespace stub
 //
-api.rpc.ws = function(url) {
-
-  var rpc = {};
-
-  var socket = new WebSocket(api.rpc.absoluteUrl(url));
-  rpc.socket = socket;
-  rpc.socket.nextMessageId = 0;
-  rpc.socket.callCollection = {};
-
-  socket.onopen = function() {
-    console.log('Connection opened');
-  };
-
-  socket.onclose = function() {
-    console.log('Connection closed');
-  };
-
-  socket.onmessage = function(event) {
-    console.log('Message from server: ' + event.data);
-    var data = JSON.parse(event.data);
-    if (data.type === 'introspection') {
-      var nName, mName, mPath, namespace, obj, parts, sub;
-      for (nName in data.namespaces) {
-        namespace = data.namespaces[nName];
-        obj = {};
-        rpc[nName] = obj;
-        for (mName in namespace) {
-          mPath = nName + '.' + mName;
-          if (mName.indexOf('.') > -1) {
-            parts = mName.split('.');
-            sub = {};
-            sub[parts[1]] = fn(mPath);
-            obj[parts[0]] = sub;
-          } else obj[mName] = fn(mPath);
-        }
-      }
-    } else if (data.id) {
-      var call = rpc.socket.callCollection[data.id];
-      if (call) {
-        if (typeof(call.callback) === 'function') call.callback(data.result);
-      }
-    }
-  };
-
-  function fn(path) {
-    return function() {
-      var parameters = [];
-      Array.prototype.push.apply(parameters, arguments);
-      var cb = parameters.pop();
-      rpc.call('post', path, parameters, cb);
-    };
-  }
-
-  rpc.close = function() {
-    socket.close();
-    rpc.socket = null;
-  };
-
-  rpc.call = function(method, name, parameters, callback) {
-    rpc.socket.nextMessageId++;
-    var data = {
-      id: 'C' + rpc.socket.nextMessageId,
-      type: 'call',
-      method: 'get',
-      name: name,
-      data: parameters
-    };
-    data.callback = callback;
-    rpc.socket.callCollection[data.id] = data;
-    socket.send(JSON.stringify(data));
-  };
-
-  return rpc;
-
-};
-
-// Initialize RPC modile
-//
-api.rpc.initialize();
-
-// Prepare AJAX interface stub
-//
-api.rpc.ajax = function(methods) { // params: { method: { get/post:url }, ... }
+api.ajax = function(methods) { // params: { method: { get/post:url }, ... }
 
   function createMethod(apiStub, apiMethod) {
     if (apiMethod === 'introspect') {
@@ -851,7 +894,7 @@ api.rpc.ajax = function(methods) { // params: { method: { get/post:url }, ... }
       if (requestParams.get ) { httpMethod = 'GET'; url = requestParams.get; }
       if (requestParams.post) { httpMethod = 'POST'; url = requestParams.post; }
       if (httpMethod) {
-        api.rpc.request(httpMethod, url, params, true, callback);
+        api.ajax.request(httpMethod, url, params, true, callback);
         return;
       } else err = new Error('DataSource error: HTTP method is not specified');
     } else err = new Error('DataSource error: AJAX method is not specified');
@@ -883,12 +926,12 @@ api.rpc.ajax = function(methods) { // params: { method: { get/post:url }, ... }
 
 // AJAX data source interface
 //
-api.rpc.ajaxDataSource = function(methods) {
-  var ds = api.rpc.ajax(methods);
+api.ajax.ajaxDataSource = function(methods) {
+  var ds = api.ajax.ajax(methods);
   ds.read = function(query, callback) {
     ds.request('read', query, function(err, data) {
       // autocreate Record
-      //   callback(err, api.rpc.record({ data: data }));
+      //   callback(err, api.ajax.record({ data: data }));
       //
       callback(err, data);
     });
@@ -903,7 +946,7 @@ api.rpc.ajaxDataSource = function(methods) {
 //   parseResponse - boolean flag to parse JSON (boolean, optional)
 //   callback - function to call on response received
 //
-api.rpc.request = function(method, url, params, parseResponse, callback) {
+api.ajax.request = function(method, url, params, parseResponse, callback) {
   var key, data = [], value = '',
       req = new XMLHttpRequest();
   req.open(method, url, true);
@@ -937,20 +980,273 @@ api.rpc.request = function(method, url, params, parseResponse, callback) {
 
 // Send HTTP GET request
 //
-api.rpc.get = function(url, params, callback) {
+api.ajax.get = function(url, params, callback) {
   if (arguments.length === 2) {
     callback = params;
     params = {};
   }
-  api.rpc.request('GET', url, params, true, callback);
+  api.ajax.request('GET', url, params, true, callback);
 };
 
 // Send HTTP POST request
 //
-api.rpc.post = function(url, params, callback) {
+api.ajax.post = function(url, params, callback) {
   if (arguments.length === 2) {
     callback = params;
     params = {};
   }
-  api.rpc.request('POST', url, params, true, callback);
+  api.ajax.request('POST', url, params, true, callback);
+};
+
+// Create persistent RPC connection
+//
+api.rpc = function(url) {
+
+  var rpc = new api.events.EventEmitter();
+
+  var socket = new WebSocket(api.impress.absoluteUrl(url));
+  rpc.socket = socket;
+  rpc.socket.nextMessageId = 0;
+  rpc.socket.callCollection = {};
+
+  socket.onopen = function() {
+    rpc.emit('open');
+  };
+
+  socket.onclose = function() {
+    rpc.emit('close');
+  };
+
+  socket.onmessage = function(event) {
+    var packet = JSON.parse(event.data);
+    if (packet.id) {
+      if (packet.type === 'result') {
+        var call = socket.callCollection[packet.id];
+        if (call) {
+          delete socket.callCollection[packet.id];
+          if (typeof(call.callback) === 'function') {
+            call.callback(null, packet.result);
+          }
+        }
+      } else if (packet.type === 'event') {
+        rpc.emit('event', event);
+        rpc.events.emit(packet.name, packet.data);
+      } else if (packet.type === 'call') {
+        rpc.emit('call', event);
+      }
+    }
+  };
+
+  // Close RPC connection
+  //
+  rpc.close = function() {
+    socket.close();
+    rpc.socket = null;
+  };
+
+  // Send call over RPC
+  //
+  rpc.ajax = function(method, name, parameters, callback) {
+    socket.nextMessageId++;
+    var packet = {
+      id: 'C' + socket.nextMessageId,
+      type: 'ajax',
+      method: method,
+      name: name,
+      data: parameters
+    };
+    packet.callback = callback;
+    socket.callCollection[packet.id] = packet;
+    socket.send(JSON.stringify(packet));
+  };
+
+  // Send GET request over RPC
+  //
+  rpc.get = function(url, params, callback) {
+    if (arguments.length === 2) {
+      callback = params;
+      params = {};
+    }
+    rpc.ajax('GET', url, params, callback);
+  };
+
+  // Send POST request over RPC
+  //
+  rpc.post = function(url, params, callback) {
+    if (arguments.length === 2) {
+      callback = params;
+      params = {};
+    }
+    rpc.ajax('POST', url, params, callback);
+  };
+
+  rpc.events = {};
+  rpc.events.listeners = {};
+
+  // Send event over RPC
+  //
+  rpc.events.send = function(name, parameters) {
+    socket.nextMessageId++;
+    var packet = {
+      id: 'C' + socket.nextMessageId,
+      type: 'event',
+      name: name,
+      data: parameters
+    };
+    socket.send(JSON.stringify(packet));
+  };
+
+  // Add named event handler
+  //
+  rpc.events.on = function(name, callback) {
+    var namedEvent = rpc.events.listeners[name];
+    if (!namedEvent) rpc.events.listeners[name] = [callback];
+    else namedEvent.push(callback);
+  };
+
+  // Emit named event
+  //
+  rpc.events.emit = function(name, parameters) {
+    var namedEvent = rpc.events.listeners[name];
+    if (namedEvent) namedEvent.forEach(function(callback) {
+      callback(parameters);
+    });
+  };
+
+  return rpc;
+
+};
+
+// Create websocket instance
+//
+api.ws = function(url) {
+
+  var ws = new api.events.EventEmitter(),
+      socket = new WebSocket(api.impress.absoluteUrl(url));
+
+  ws.socket = socket;
+
+  socket.onopen = function() {
+    ws.emit('open');
+  };
+
+  socket.onclose = function() {
+    ws.emit('close');
+  };
+
+  socket.onmessage = function(event) {
+    ws.emit('message', event);
+  };
+
+  ws.close = function() {
+    socket.close();
+    ws.socket = null;
+  };
+
+  ws.send = function(data) {
+    socket.send(data);
+  };
+
+  return ws;
+
+};
+
+// Create Server-Sent Events instance
+//
+api.sse = function(url) {
+  var sse = new EventSource(url);
+  sse.on = sse.addEventListener;
+  return sse;
+};
+
+// Backend and frontend event emitters
+//
+application.backend = new api.events.EventEmitter();
+application.frontend = new api.events.EventEmitter();
+
+// Main Impress RPC binding to server-side
+//
+application.rpc = null;
+
+// Client-side load balancer
+//
+application.balancer = {};
+application.balancer.servers = {};
+application.balancer.sequence = [];
+application.balancer.sequenceIndex = 0;
+application.balancer.currentServer = null;
+application.balancer.currentNode = null;
+application.balancer.currentRetry = 0;
+application.balancer.currentRetryMax = 10;
+application.balancer.globalRetry = 0;
+application.balancer.retryInterval = 3000;
+
+// Main Impress RPC binding to server-side
+//
+application.connect = function(callback) {
+  api.ajax.get('/api/application/balancer.json', {}, function(err, res) {
+    if (!err) {
+      application.balancer.servers = res.servers;
+      application.balancer.generateSequence();
+      application.reconnect();
+    }
+  });
+  if (callback ) application.rpc.on('open', callback);
+};
+
+application.reconnect = function() {
+  var node = application.balancer.getNextNode(),
+      schema = node.server.secure ? 'wss' : 'ws',
+      path = '/examples/impress.rpc',
+      url = schema + '://' + node.host + path;
+  application.rpc = api.rpc(url);
+  application.rpc.on('open', function() {
+    application.connect.url = url;
+    console.log('opened ' + url);
+  });
+  application.rpc.on('close', function() {
+    console.log('closed ' + url);
+    setTimeout(function() {
+      application.reconnect();
+    }, application.balancer.retryInterval);
+  });
+};
+
+application.balancer.generateSequence = function() {
+  var i, server, serverName,
+      servers = application.balancer.servers;
+  if (servers) {
+    for (serverName in servers) {
+      server = servers[serverName];
+      for (i = 0; i < server.ports.length; i++) {
+        application.balancer.sequence.push({
+          server: server,
+          host: server.host + ':' + server.ports[i]
+        });
+      }
+    }
+  }
+};
+
+application.balancer.getNextNode = function() {
+  var balancer = application.balancer;
+  balancer.globalRetry++;
+  if (balancer.currentRetry < balancer.currentRetryMax) {
+    // Next retry
+    balancer.currentRetry++;
+  } else {
+    // New node
+    balancer.currentRetry = 0;
+    if (balancer.sequenceIndex < balancer.sequence.length) {
+      // Next node
+      balancer.sequenceIndex++;
+    } else {
+      // First node
+      balancer.sequenceIndex = 0;
+    }
+  }
+  var node = balancer.sequence[balancer.sequenceIndex];
+  balancer.currentNode = node;
+  balancer.currentServer = node.server;
+  return node;
 };
